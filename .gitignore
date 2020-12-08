@@ -1,0 +1,7 @@
+*.pyc
+.ipynb_*
+*.ipynb
+.vscode/*
+*.gif
+logs/*
+*.npy
