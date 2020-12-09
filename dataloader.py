@@ -26,7 +26,7 @@ class VideoDataset(Dataset):
         self.current_video_path = None
         self.current_buffer = None
         self.channels_first = True
-        self.dtype = 'float32'
+        self.dtype = 'float16'
         self.output_channels = 1 
         self.output_size = (640,360)
     def get_target(self, video_path, frame, img_shape):
@@ -50,14 +50,14 @@ class VideoDataset(Dataset):
             self.current_video_path = video_path
         out_frame = self.current_buffer[frame-1]/255
         target = self.get_target(video_path, frame, out_frame.shape)
-        out_frame = cv2.resize(out_frame, dsize=self.output_size, interpolation=cv2.INTER_CUBIC)
-        target = cv2.resize(target, dsize=self.output_size, interpolation=cv2.INTER_CUBIC)
+        out_frame = cv2.resize(out_frame.astype('float32'), dsize=self.output_size, interpolation=cv2.INTER_CUBIC)
+        target = cv2.resize(target.astype('float32'), dsize=self.output_size, interpolation=cv2.INTER_CUBIC)
         if len(target.shape) < 3:
             target = np.expand_dims(target,axis=-1)
         if self.channels_first: 
             out_frame = np.transpose(out_frame, (2,0,1))
             target = np.transpose(target, (2,0,1))
-        return  out_frame, target
+        return  out_frame.astype(self.dtype), target.astype(self.dtype)
 # %%
 class NFLDataModule(pl.LightningDataModule):
     def __init__(self, train_labels_df : pd.DataFrame, val_labels_df : pd.DataFrame, batch_size : int = 10) -> None:
