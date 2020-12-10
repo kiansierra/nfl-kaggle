@@ -1,16 +1,5 @@
 #%%
-import matplotlib.pyplot as plt
-import pandas as pd 
-import numpy as np
-import cv2
-import os
 from dataloader import NFLVideoDataModule,NFLImageDataModule, load_buffer
-import pytorch_lightning as pl 
-from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
-from pytorch_lightning.callbacks import  LearningRateMonitor, ModelCheckpoint
-from torchvision import transforms
-from basemodel import UnetTransfomer
-import wandb
 import tqdm 
 #%%
 DATA_DIR = '../nfl-impact-detection'
@@ -26,4 +15,5 @@ vid_datamodule = NFLImageDataModule(**dataloader_args)
 vid_datamodule.prepare_data()
 #%%
 for batch in tqdm.tqdm(vid_datamodule.train_dataloader()):
-    x, y = batch
+    x, y, bbox = batch
+    assert bbox.shape == (dataloader_args['batch_size'], 41, 4)

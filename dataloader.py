@@ -34,7 +34,7 @@ class VideoDataset(Dataset):
         self.output_channels = 1 
         self.output_size = (640,360)
         self.loading=False
-    def get_target(self, video_path, frame, img_shape):
+    def get_img_mask(self, video_path, frame, img_shape):
         video_cond = self.labels_df['video_path'] == video_path
         frame_cond = self.labels_df['frame'] == frame
         target_df =self.labels_df.loc[video_cond & frame_cond,:]
@@ -58,7 +58,7 @@ class VideoDataset(Dataset):
         while self.loading:
             time.sleep(0.1)
         out_frame = self.current_buffer[frame-1]/255
-        target = self.get_target(video_path, frame, out_frame.shape)
+        target = self.get_img_mask(video_path, frame, out_frame.shape)
         out_frame = cv2.resize(out_frame.astype('float32'), dsize=self.output_size, interpolation=cv2.INTER_CUBIC)
         target = cv2.resize(target.astype('float32'), dsize=self.output_size, interpolation=cv2.INTER_CUBIC)
         if len(target.shape) < 3:
@@ -93,9 +93,9 @@ class NFLVideoDataModule(pl.LightningDataModule):
         dataset = VideoDataset(self.test_labels_df)
         return DataLoader(dataset, batch_size = self.batch_size)
 # %%
-class ImageDataset():
+class ImageDataset(Dataset):
     def __init__(self, labels_df : pd.DataFrame) -> None:
-        #super(ImageDataset,self).__init__()
+        super(ImageDataset,self).__init__()
         self.frames_df = labels_df[['video', 'frame', 'image_path']].groupby(['video', 'frame', 'image_path']).count().reset_index()
         self.labels_df = labels_df
         self.current_video_path = None
@@ -105,6 +105,7 @@ class ImageDataset():
         self.output_channels = 1 
         self.output_size = (640,360)
         self.loading=False
+        self.max_bboxes = 41
     def get_img_mask(self, video, frame, img_shape):
         video_cond = self.labels_df['video'] == video
         frame_cond = self.labels_df['frame'] == frame
@@ -115,6 +116,13 @@ class ImageDataset():
             l, t = row['left'], row['top']
             out[t:t+h, l:l+w,:] = 1
         return out
+    def get_img_bbox(self, video, frame, img_shape):
+        video_cond = self.labels_df['video'] == video
+        frame_cond = self.labels_df['frame'] == frame
+        bboxes = np.zeros(shape=(self.max_bboxes,4))
+        outputs = self.labels_df.loc[video_cond & frame_cond,['width', 'height','left','top']].values
+        bboxes[:len(outputs)] = outputs
+        return bboxes
     def __len__(self):
         return len(self.frames_df)
     def __getitem__(self, idx):
@@ -122,6 +130,7 @@ class ImageDataset():
         video, frame, img_path = row['video'], row['frame'], row['image_path']
         out_frame = cv2.imread(img_path)
         target = self.get_img_mask(video, frame, out_frame.shape)
+        bboxes = self.get_img_bbox(video, frame, out_frame.shape)
         out_frame = cv2.resize(out_frame.astype('float32'), dsize=self.output_size, interpolation=cv2.INTER_CUBIC)
         target = cv2.resize(target.astype('float32'), dsize=self.output_size, interpolation=cv2.INTER_CUBIC)
         if len(target.shape) < 3:
@@ -129,7 +138,7 @@ class ImageDataset():
         if self.channels_first: 
             out_frame = np.transpose(out_frame, (2,0,1))
             target = np.transpose(target, (2,0,1))
-        return  out_frame.astype(self.dtype), target.astype(self.dtype)
+        return  out_frame.astype(self.dtype), target.astype(self.dtype), bboxes
 # %%
 class NFLImageDataModule(pl.LightningDataModule):
     def __init__(self, data_dir : str, batch_size : int = 10, num_workers=0) -> None:
