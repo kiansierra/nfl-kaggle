@@ -15,21 +15,21 @@ class NFLBaseModel(pl.LightningModule):
         self.dec_rate = dec_rate
         self.opt_upsteps = opt_upsteps
         self.wd = weight_decay 
-        self.example_input_array = torch.ones(size = (1,2,720,1280))
+        self.example_input_array = torch.ones(size = (1,3,360,640))
         self.loss = nn.BCEWithLogitsLoss()
         # self.train_accuracy = pl.metrics.Accuracy()
         # self.val_accuracy = pl.metrics.Accuracy()
         #self.train_fscore = pl.metrics.FBeta(num_classes=5)
-    def log_step(self, phase, loss, x, y, y_pred, batch_idx):
+    def log_step(self, phase, loss, x, y, y_pred, batch_idx, log_images_freq = 200):
         self.log(f'{phase}_loss', loss)
         #self.log(f'{phase}_acc_step', acc, prog_bar=True)
         #self.log('train_fscore', self.train_fscore(y_hat, y))
-        if batch_idx % 200 == 0 and isinstance(self.logger, TensorBoardLogger):
+        if batch_idx % log_images_freq == 0 and isinstance(self.logger, TensorBoardLogger):
             self.logger.experiment.add_images(f'{phase}_image', x, dataformats ='NCHW', global_step=self.global_step)
-        elif batch_idx % 200 == 0 and isinstance(self.logger, WandbLogger):
-            batch_imgs = x.data.permute(0,2,3,1).cpu().numpy()
-            true_labels = y.data.permute(0,2,3,1).cpu().numpy()
-            pred_labels = y_pred.data.permute(0,2,3,1).cpu().numpy()
+        elif batch_idx % log_images_freq == 0 and isinstance(self.logger, WandbLogger):
+            batch_imgs = x.data.permute(0,2,3,1).cpu().numpy().astype('float32')
+            true_labels = y.data.permute(0,2,3,1).cpu().numpy().astype('float32')
+            pred_labels = y_pred.data.permute(0,2,3,1).cpu().numpy().astype('float32')
             for num, (img, true_label, pred_label) in enumerate(zip(batch_imgs, true_labels, pred_labels)):
                 self.logger.experiment.log({f'{phase}_image_{num}':[wandb.Image(img, caption=f'Image'), wandb.Image(img*(true_label + 1)/2, caption=f'True'),
                  wandb.Image(img*(pred_label + 1)/2, caption=f'Pred')]})
@@ -43,14 +43,14 @@ class NFLBaseModel(pl.LightningModule):
         y_hat = self(x)
         loss = self.loss(y_hat, y)
         #acc = self.train_accuracy(y_hat, y)
-        self.log_step('train', loss,x, y, y_hat, batch_idx)
+        self.log_step('train', loss,x, y, y_hat, batch_idx, log_images_freq=200)
         return loss
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         loss = self.loss(y_hat, y)
         #acc = self.val_accuracy(y_hat, y)
-        self.log_step('val', loss,x, y, y_hat, batch_idx)
+        self.log_step('val', loss,x, y, y_hat, batch_idx, log_images_freq=20)
         return loss
     def test_step(self, batch, batch_idx):
         x, _ = batch
@@ -78,7 +78,6 @@ class UnetTransfomer(NFLBaseModel):
     def __init__(self, num_levels = 4, start_channels= 32,  init_channels=3, output_channels=1, **kwargs):
         super(UnetTransfomer, self).__init__(**kwargs)
         self.save_hyperparameters()
-        self.example_input_array = torch.ones(size=(1,3,720,1280))
         self.unet_down = UnetDownwards(num_levels=num_levels, init_channels=init_channels, first_output=start_channels)
         self.unet_upwards = UnetUpwards(num_levels=num_levels, output_channels=start_channels*2 ,first_output=start_channels)
         self.unet_top = UnetTop(output_channels=output_channels , first_output=start_channels*2)
@@ -88,12 +87,11 @@ class UnetTransfomer(NFLBaseModel):
         output = self.unet_top(output)
         return output
 #%%
-class WnetTransfomer(pl.LightningModule):
-    def __init__(self, num_levels = 4, start_channels= 64, init_channels=3, output_channels=1):
-        super(WnetTransfomer, self).__init__()
+class WnetTransfomer(NFLBaseModel):
+    def __init__(self, num_levels = 4, start_channels= 64, init_channels=3, output_channels=1, **kwargs):
+        super(WnetTransfomer, self).__init__(**kwargs)
         self.save_hyperparameters()
         self.num_levels = num_levels
-        self.example_input_array = torch.ones(size=(2,3,512,512))
         self.initial_dc = DoubleConv(in_channels=init_channels, out_channels=start_channels)
         for num in range(self.num_levels):
             setattr(self, f"up-down-resblock_{num}", UpDownResBlock(start_channels))
